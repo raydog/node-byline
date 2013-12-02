@@ -5,6 +5,8 @@
  */
 
 var assert = require("assert"),
+    stream = require('stream'),
+    util = require('util'),
     fs = require('fs'),
     byline = require('../lib');
 
@@ -60,7 +62,7 @@ describe('byline', function() {
     });
   });
     
-   it('should read a large file', function(done) {
+  it('should read a large file', function(done) {
     var input = fs.createReadStream('test/rfc.txt');
     var lineStream = byline(input);
     lineStream.setEncoding('utf8');
@@ -87,6 +89,57 @@ describe('byline', function() {
       assert.deepEqual(lines2, lines1);
       done();
     });
+  });
+
+  it('should read a VERY long stream correctly, even with buffering', function(done) {
+    
+    var NUM_EMITS = 1000;
+
+    // A simple readable stream that generates TONS of lols:
+    function LolStream() {
+      stream.Readable.call(this);
+      this._counter = 0;
+      this._max_lols = NUM_EMITS;
+    }
+
+    util.inherits(LolStream, stream.Readable);
+    
+    LolStream.prototype._read = function LolRead(size) {
+      this._counter ++;
+      if (this._counter <= this._max_lols) {
+        // Emit 18 lols:
+        this.push( "LOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\nLOL\n", "utf8");
+      } else {
+        // EOF:
+        this.push(null);
+      }
+    };
+
+    var our_stream = new LolStream({lolCount: 1024});
+    var line_stream = byline(our_stream);
+    var count = 0;
+    var was_paused = false;
+    line_stream.on('data', function (d, encoding) {
+      // We trigger a pause immediately, so that we can trigger the buffer overrun
+      // bug:
+      if (!was_paused) {
+        was_paused = true;
+        line_stream.pause();
+        
+        // Give the underlying stream a full second to run uncapped:
+        setTimeout(function () {
+          line_stream.resume();
+        }, 500);
+      }
+
+      // Validate + count the packets that we've seen:
+      assert.equal(d.toString(encoding), "LOL");
+      count ++;
+    });
+    line_stream.on('end', function () {
+      assert.equal(count, NUM_EMITS * 18);
+      done();
+    })
   });
   
   it('should pause() and resume()', function(done) {
