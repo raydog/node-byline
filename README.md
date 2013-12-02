@@ -101,7 +101,8 @@ By default byline skips empty lines, if you want to keep them, pass the `keepEmp
 
 #Tests
 
-    mocha -R spec
+    npm install
+    npm test
 
 #v0.8
 
